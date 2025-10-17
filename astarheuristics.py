@@ -59,14 +59,17 @@ class Node:
         yield self.x; yield self.y
 
 def in_bounds(x:int,y:int)->bool:
+    """Return True when the grid index is inside the drawable board."""
     return 0<=x<COLS and 0<=y<ROWS
 
 def to_cell(mx:int,my:int)->Optional[Node]:
+    """Translate mouse coordinates into a grid node or None if outside."""
     if not (OX <= mx < OX+GRID_W and OY <= my < OY+GRID_H):
         return None
     return Node((mx-OX)//CELL, (my-OY)//CELL)
 
 def rect_of(n:Node)->pygame.Rect:
+    """Compute the pixel rect used to draw a cell for node n."""
     return pygame.Rect(OX + n.x*CELL+1, OY + n.y*CELL+1, CELL-2, CELL-2)
 
 # --------------------------------------------------------------------------- #
@@ -94,6 +97,7 @@ def weighted_euclidean_heuristic(p1,p2,weight:float=1.0)->float:
 # CORE A*
 # --------------------------------------------------------------------------- #
 def neighbors(n:Node, diag:bool)->Iterable[Node]:
+    """Yield orthogonal neighbours; include diagonals when diag is True."""
     dirs4=[(1,0),(-1,0),(0,1),(0,-1)]
     dirs8=dirs4+[(1,1),(1,-1),(-1,1),(-1,-1)]
     for dx,dy in (dirs8 if diag else dirs4):
@@ -102,9 +106,11 @@ def neighbors(n:Node, diag:bool)->Iterable[Node]:
             yield Node(nx,ny)
 
 def step_cost(a:Node,b:Node)->float:
+    """Chebyshev metric cost: diagonal moves cost sqrt(2)."""
     return math.sqrt(2) if (a.x!=b.x and a.y!=b.y) else 1.0
 
 def corner_cut(grid, a:Node, b:Node)->bool:
+    """Block diagonal moves if they would sneak through the corner of a wall."""
     if a.x==b.x or a.y==b.y: return False
     return grid[a.x][b.y] or grid[b.x][a.y]
 
@@ -121,6 +127,7 @@ def astar(grid,start:Node,goal:Node,diag:bool,heuristic_fn:Callable[[Node,Node],
         _,_,cur=heapq.heappop(openh)
         if cur in closed: continue
         closed.add(cur)
+        # Expose current search frontier/closed sets for the visualiser.
         yield "state",cur,set(seen),set(closed),dict(came)
         if cur==goal:
             yield "done",cur,set(seen),set(closed),dict(came)
@@ -137,6 +144,7 @@ def astar(grid,start:Node,goal:Node,diag:bool,heuristic_fn:Callable[[Node,Node],
     yield "done",None,set(),set(closed),dict(came)
 
 def reconstruct(came:Dict[Node,Optional[Node]], end:Node)->List[Node]:
+    """Walk backwards from the goal to produce the displayed path."""
     if end not in came: return []
     p=[end]; cur=end
     while came[cur] is not None:
@@ -159,7 +167,7 @@ def simple_barrier()->list:
     return grid
 
 def scattered_obstacles(density=0.20, start:Node=None, goal:Node=None)->list:
-    """Random obstacles ~density; ensure reachability by retrying."""
+    """Fill the grid with random blockers and reroll until path exists."""
     rnd=random.Random(42)
     while True:
         grid=empty_grid()
@@ -173,7 +181,7 @@ def scattered_obstacles(density=0.20, start:Node=None, goal:Node=None)->list:
         if ok: return grid
 
 def maze_dfs(start:Node, goal:Node)->list:
-    """Randomized DFS maze carved on odd grid; ensures path exists."""
+    """Carve a DFS maze on odd cells and make sure start/goal are open."""
     grid=[[1 for _ in range(ROWS)] for _ in range(COLS)]
     def cells_neighbors(cx,cy):
         for dx,dy in ((2,0),(-2,0),(0,2),(0,-2)):
@@ -207,7 +215,7 @@ def maze_dfs(start:Node, goal:Node)->list:
 # OBSTACLE PATTERNS (Task 3)
 # --------------------------------------------------------------------------- #
 def linear_barriers(kind:str)->list:
-    """Linear barriers: horizontal, vertical, diagonal, L-shaped."""
+    """Deterministic line-based obstacles to illustrate detours."""
     g=empty_grid()
     if kind=="horizontal":
         y=ROWS//2
@@ -225,7 +233,7 @@ def linear_barriers(kind:str)->list:
     return g
 
 def geometric_shape(kind:str)->list:
-    """Geometric shapes: hollow square, filled circle, star, spiral."""
+    """Render geometric blocker patterns for heuristic stress tests."""
     g=empty_grid(); cx,cy=COLS//2,ROWS//2
     if kind=="square":
         for x in range(max(0,cx-8),min(COLS,cx+8)):
@@ -258,7 +266,7 @@ def geometric_shape(kind:str)->list:
     return g
 
 def maze_types(kind:str)->list:
-    """Maze-like patterns: simple corridor, rooms, open multi-path."""
+    """Family of deterministic mazes with varying corridor structures."""
     g=empty_grid()
     if kind=="simple":
         y=ROWS//2
@@ -297,7 +305,7 @@ def main():
     font=pygame.font.SysFont("Menlo,Consolas,DejaVuSansMono,monospace",18)
     small=pygame.font.SysFont("Menlo,Consolas,DejaVuSansMono,monospace",14)
 
-    random.seed(42)  # reproducibility for random-based builders
+    random.seed(42)  # deterministic patterns when random noise is used
 
     # Initial state
     start, goal = Node(2,2), Node(COLS-3, ROWS-3)
@@ -321,6 +329,7 @@ def main():
     grid = apply_pattern(family, variant)
 
     def make_heur():
+        """Return the currently selected heuristic callable."""
         if mode=="euclidean": return euclidean_heuristic
         if mode=="manhattan": return manhattan_heuristic
         if mode=="chebyshev": return chebyshev_heuristic
@@ -330,6 +339,7 @@ def main():
     running=False; gen=None; path:List[Node]=[]
 
     def reset():
+        """Rebuild the A* generator after any settings or grid change."""
         nonlocal gen, running, path
         gen = astar(grid, start, goal, diag, make_heur())
         running=False; path=[]
@@ -361,6 +371,7 @@ def main():
 
                 # Benchmarks
                 if e.key==pygame.K_b:
+                    # Print benchmark table to the console without leaving the UI.
                     run_benchmarks()
 
                 # Pattern cycling (Task 3)
@@ -462,6 +473,7 @@ def main():
 # BENCHMARKS (Task 2)
 # --------------------------------------------------------------------------- #
 def dijkstra_length(grid, start:Node, goal:Node, diag:bool)->Tuple[bool,float]:
+    """Run Dijkstra to obtain optimal path length for benchmark comparisons."""
     openh:List[Tuple[float,int,Node]]=[]; g:Dict[Node,float]={start:0.0}; t=0
     heapq.heappush(openh,(0.0,t,start)); closed:Set[Node]=set()
     while openh:
@@ -478,6 +490,7 @@ def dijkstra_length(grid, start:Node, goal:Node, diag:bool)->Tuple[bool,float]:
     return False,float("inf")
 
 def astar_run(grid,start,goal,diag,heur_fn):
+    """Execute A* once and return aggregate metrics for the benchmark table."""
     openh=[]; g={start:0.0}; came={start:None}; t=0
     heapq.heappush(openh,(heur_fn(start,goal),t,start)); closed=set()
     t0=time.perf_counter()
@@ -498,6 +511,7 @@ def astar_run(grid,start,goal,diag,heur_fn):
     return {"found":False,"path_len":float("inf"),"time_ms":(time.perf_counter()-t0)*1000.0,"explored":len(closed)}
 
 def run_benchmarks():
+    """Compare heuristics across canned scenarios and print a CSV-like table."""
     random.seed(42)
     start = Node(5,5)
     goal  = Node(min(45, COLS-1), min(25, ROWS-1))
@@ -556,6 +570,7 @@ def run_benchmarks():
 # CLI SWITCH
 # --------------------------------------------------------------------------- #
 def _maybe_run_bench_from_argv()->bool:
+    """Catch the --bench flag so the script can run headless from the CLI."""
     parser=argparse.ArgumentParser(add_help=False)
     parser.add_argument("--bench", action="store_true", default=False)
     try:

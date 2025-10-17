@@ -216,6 +216,7 @@ def simulated_annealing(iters: int, per_iter: int,
     history = [SearchRecord(w=w.copy(), avg=cur)]
     best_w, best_avg = w.copy(), cur
     T = t0
+    min_sigma, max_sigma = 0.01, 2.0
     for t in range(1, iters+1):
         noise = rng.normal(0.0, sigma, size=4)
         cand = w + noise
@@ -224,11 +225,13 @@ def simulated_annealing(iters: int, per_iter: int,
         take = False
         if val >= cur:
             take = True
-            if adaptive: sigma = max(1e-4, sigma * 0.5)  # reward up → shrink noise
+            if adaptive:
+                sigma = max(min_sigma, sigma * 0.5)  # reward up → shrink noise
         else:
             if rng.random() < accept_prob(delta, T):
                 take = True
-                if adaptive: sigma = min(2.0, sigma * 2.0)  # reward down → enlarge noise
+                if adaptive:
+                    sigma = min(max_sigma, sigma * 2.0)  # reward down → enlarge noise
         if take:
             w, cur = cand, val
             if val > best_avg: best_avg, best_w = val, cand.copy()
